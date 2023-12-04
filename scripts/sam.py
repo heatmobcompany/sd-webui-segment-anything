@@ -186,7 +186,7 @@ def create_mask_output_fashion(image_np, masks, boxes_filt):
             mask = mask.reshape((w, h))
             mask = mask.astype(np.uint8) * 255
             mask = border_adjust(mask, dilate_pixel)
-            mask = ndimage.gaussian_filter(mask, 1)
+            # mask = ndimage.gaussian_filter(mask, 1)
             mask = (mask > 0).astype(bool)
             mask = mask.reshape((1, w, h))
         masks_gallery.append(Image.fromarray(np.any(mask, axis=0)))
