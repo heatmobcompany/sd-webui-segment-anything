@@ -21,8 +21,8 @@ from sam_hq.build_sam_hq import sam_model_registry
 from scripts.dino import dino_model_list, dino_predict_internal, show_boxes, clear_dino_cache, dino_install_issue_text
 from scripts.auto import clear_sem_sam_cache, register_auto_sam, semantic_segmentation, sem_sam_garbage_collect, image_layer_internal, categorical_mask_image, global_sam
 from scripts.process_params import SAMProcessUnit, max_cn_num
-from scipy import ndimage
-from process_smooth_segment import smooth_edge_external
+import time
+from scripts.process_smooth_segment import smooth_edge_external, asymptotic
 
 
 refresh_symbol = '\U0001f504'       # 🔄
@@ -185,16 +185,23 @@ def create_mask_output_fashion(image_np, masks, boxes_filt):
                 mask = np.logical_or.reduce(mask)
             mask = mask.reshape((w, h))
             mask = mask.astype(np.uint8) * 255
-            mask = border_adjust(mask, dilate_pixel)
-            # mask = ndimage.gaussian_filter(mask, 1)
+            # mask = border_adjust(mask, dilate_pixel)
+            start = time.time()
+            mask = asymptotic(image_np, mask)
+            end = time.time()
+            print("Execution time:", end - start)
             mask = (mask > 0).astype(bool)
             mask = mask.reshape((1, w, h))
+
         masks_gallery.append(Image.fromarray(np.any(mask, axis=0)))
         blended_image = show_masks(show_boxes(image_np, boxes_filt), mask)
         mask_images.append(Image.fromarray(blended_image))
         image_np_copy = copy.deepcopy(image_np)
         image_np_copy[~np.any(mask, axis=0)] = np.array([0, 0, 0, 0])
+        # start = time.time()
         smooth_mask = smooth_edge_external(image_np_copy)
+        # end = time.time()
+        # print("Execution time:", end - start)
         matted_images.append(Image.fromarray(smooth_mask))
     return mask_images + masks_gallery + matted_images
 
