@@ -422,3 +422,57 @@ def down_up(image: np.ndarray, scale: int = 2):
     upsampled = cv2.resize(downsampled, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_LINEAR)
 
     return upsampled
+def asymptotic(image: np.ndarray, segment: np.ndarray):
+    # Get contours of image
+    image = image[..., :3]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # blur = cv2.GaussianBlur(gray, (3, 3), 0)
+    canny = cv2.Canny(gray, 20, 200)
+    contours, _ = cv2.findContours(canny, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    # Get contours of segment
+    blur_seg = cv2.GaussianBlur(segment, (1, 1), 0)
+    canny_seg = cv2.Canny(blur_seg, 170, 200)
+    contours_seg, _ = cv2.findContours(canny_seg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+    new_points_img = []
+    for contour in contours:
+        # Reformat the contour into two lists of X and Y values
+        points = list(contour)
+        for point in points: new_points_img.append(tuple(point[0]))
+    new_points_img = np.array(new_points_img)
+    new_points_img_list = list(new_points_img)
+
+    mask = np.zeros((segment.shape[0], segment.shape[1]), dtype=np.uint8)
+
+    for contour in contours_seg:
+        new_points_seg = []
+        # Reformat the contour into two lists of X and Y values
+        points = list(contour)
+        for point in points: new_points_seg.append(tuple(point[0]))
+        new_points_seg = np.array(new_points_seg)
+        new_points_seg_list = list(new_points_seg)
+        a = []
+        for i, b in enumerate(new_points_seg):
+            leftbottom = np.array(b)
+            distances = np.linalg.norm(new_points_img - leftbottom, axis=1)
+            min_index = np.argmin(distances)
+            if distances[min_index] <= 1.5:
+                # new_points_seg[i] = new_points_img[min_index]
+                a.append(new_points_img_list[min_index])
+                # new_points_seg_list.append(new_points_img_list[min_index])
+        # a = a.reverse()
+        a = a[::-1]
+        print('a', a)
+        for i in a:
+            new_points_seg_list.append(i)
+
+        polygon = np.array([new_points_seg_list], dtype=np.int32)
+        cv2.fillPoly(mask, polygon, (255))
+
+    # polygon = np.array([new_points_seg], dtype=np.int32)
+    # mask = cv2.fillPoly(mask, polygon, (255))
+    mask_out = cv2.bitwise_or(mask, segment)
+    mask_out = cv2.GaussianBlur(mask_out, (1, 1), 0)
+    cv2.imwrite("mask_polygon.jpg", mask_out)
+
+    return mask_out
