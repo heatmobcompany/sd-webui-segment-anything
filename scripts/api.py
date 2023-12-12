@@ -64,6 +64,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
         dino_box_threshold: Optional[float] = 0.3
         dino_preview_checkbox: bool = False
         dino_preview_boxes_selection: Optional[List[int]] = None
+        dialate_mask_pixel: Optional[int] = 0
 
     @app.post("/sam/sam-predict")
     def api_sam_predict(payload: SamPredictRequest = Body(...)) -> Any:
@@ -91,7 +92,9 @@ def sam_api(_: gr.Blocks, app: FastAPI):
                 payload.dino_text_prompt,
                 payload.dino_box_threshold,
                 payload.dino_preview_checkbox,
-                payload.dino_preview_boxes_selection)
+                payload.dino_preview_boxes_selection,
+                payload.dialate_mask_pixel,
+                )
             result = {
                 "msg": sam_message,
             }

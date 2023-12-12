@@ -143,11 +143,21 @@ def dilate_mask(mask, dilation_amt):
     return dilated_mask, dilated_binary_img
 
 
-def create_mask_output(image_np, masks, boxes_filt):
+def create_mask_output(image_np, masks, boxes_filt, dilate_pixel = 0):
     print("Creating output image")
     mask_images, masks_gallery, matted_images = [], [], []
     boxes_filt = boxes_filt.numpy().astype(int) if boxes_filt is not None else None
     for mask in masks:
+        if dilate_pixel != 0:
+            d,w,h = mask.shape
+            if d > 1:
+                mask = np.logical_or.reduce(mask)
+            mask = mask.reshape((w,h))
+            mask = mask.astype(np.uint8)*255
+            mask = border_adjust(mask, dilate_pixel)
+            mask = (mask > 0).astype(bool)
+            mask = mask.reshape((1,w,h))
+
         masks_gallery.append(Image.fromarray(np.any(mask, axis=0)))
         blended_image = show_masks(show_boxes(image_np, boxes_filt), mask)
         mask_images.append(Image.fromarray(blended_image))
@@ -223,7 +233,7 @@ def create_mask_batch_output(
 
 def sam_predict(sam_model_name, input_image, positive_points, negative_points,
                 dino_checkbox, dino_model_name, text_prompt, box_threshold,
-                dino_preview_checkbox, dino_preview_boxes_selection):
+                dino_preview_checkbox, dino_preview_boxes_selection, dialate_mask_pixel):
     print("Start SAM Processing")
     if sam_model_name is None:
         return [], "SAM model not found. Please download SAM model from extension README."
@@ -273,7 +283,7 @@ def sam_predict(sam_model_name, input_image, positive_points, negative_points,
             multimask_output=True)
         masks = masks[:, None, ...]
     garbage_collect(sam)
-    return create_mask_output(image_np, masks, boxes_filt), sam_predict_status + sam_predict_result + (f" However, GroundingDINO installment has failed. Your process automatically fall back to local groundingdino. Check your terminal for more detail and {dino_install_issue_text}." if (dino_enabled and not install_success) else "")
+    return create_mask_output(image_np, masks, boxes_filt, dialate_mask_pixel), sam_predict_status + sam_predict_result + (f" However, GroundingDINO installment has failed. Your process automatically fall back to local groundingdino. Check your terminal for more detail and {dino_install_issue_text}." if (dino_enabled and not install_success) else "")
 
 
 def fashion_segment(sam_model_name, input_image, positive_points, negative_points,
@@ -717,6 +727,7 @@ class Script(scripts.Script):
                         outputs=[dino_column],
                         show_progress=False)
                     sam_output_mask_gallery = gr.Gallery(label='Segment Anything Output').style(grid=3)
+                    dialate_mask_pixel = gr.Slider(label="Dilate the mask", minimum=-10, maximum=10, value=0, step=1)
                     sam_submit = gr.Button(value="Preview Segmentation", elem_id=f"{tab_prefix}run_button")
                     sam_result = gr.Text(value="", label="Segment Anything status")
                     sam_submit.click(
@@ -725,7 +736,7 @@ class Script(scripts.Script):
                         inputs=[sam_model_name, sam_input_image,        # SAM
                                 sam_dummy_component, sam_dummy_component,   # Point prompts
                                 dino_checkbox, dino_model_name, dino_text_prompt, dino_box_threshold,  # DINO prompts
-                                dino_preview_checkbox, dino_preview_boxes_selection],  # DINO preview prompts
+                                dino_preview_checkbox, dino_preview_boxes_selection, dialate_mask_pixel],  # DINO preview prompts
                         outputs=[sam_output_mask_gallery, sam_result])
                     with FormRow():
                         sam_output_chosen_mask = gr.Radio(label="Choose your favorite mask: ", value="0", choices=["0", "1", "2"], type="index")
