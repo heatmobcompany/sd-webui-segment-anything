@@ -727,7 +727,7 @@ class Script(scripts.Script):
                         outputs=[dino_column],
                         show_progress=False)
                     sam_output_mask_gallery = gr.Gallery(label='Segment Anything Output').style(grid=3)
-                    dialate_mask_pixel = gr.Slider(label="Dilate the mask", minimum=-10, maximum=10, value=0, step=1)
+                    dialate_mask_pixel = gr.Slider(label="Dilate the mask", minimum=-100, maximum=100, value=0, step=1)
                     sam_submit = gr.Button(value="Preview Segmentation", elem_id=f"{tab_prefix}run_button")
                     sam_result = gr.Text(value="", label="Segment Anything status")
                     sam_submit.click(
