@@ -178,13 +178,13 @@ def border_adjust(mask, number_pixel):
     return mask
 
 
-def create_mask_output_fashion(image_np, masks, boxes_filt):
+def create_mask_output_fashion(image_np, masks, boxes_filt, dilate_pixel = 0):
     print("Creating fashion output image")
     mask_images, masks_gallery, matted_images = [], [], []
     boxes_filt = boxes_filt.numpy().astype(int) if boxes_filt is not None else None
     index = 0
     for mask in masks:
-        dilate_pixel = -2 if index == 1 else 0
+        dilate_pixel = dilate_pixel if dilate_pixel != 0 else -2 if index == 1 else 0
         print(f"index: {index}, dilate_pixel: {dilate_pixel}")
         index += 1
         if dilate_pixel != 0:
@@ -288,7 +288,7 @@ def sam_predict(sam_model_name, input_image, positive_points, negative_points,
 
 def fashion_segment(sam_model_name, input_image, positive_points, negative_points,
                 dino_checkbox, dino_model_name, text_prompt, box_threshold,
-                dino_preview_checkbox, dino_preview_boxes_selection):
+                dino_preview_checkbox, dino_preview_boxes_selection, dialate_mask_pixel):
     print("Start SAM Processing")
     if sam_model_name is None:
         return [], None, None, "SAM model not found. Please download SAM model from extension README."
@@ -363,7 +363,7 @@ def fashion_segment(sam_model_name, input_image, positive_points, negative_point
     annotations = _sam.generate(image_np_rgb)
 
     garbage_collect(sam)
-    return create_mask_output_fashion(image_np, mask_result, boxes_filt), infos, annotations, "Success"
+    return create_mask_output_fashion(image_np, mask_result, boxes_filt, dialate_mask_pixel), infos, annotations, "Success"
 
 
 
