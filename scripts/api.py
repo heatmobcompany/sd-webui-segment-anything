@@ -65,6 +65,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
         dino_preview_checkbox: bool = False
         dino_preview_boxes_selection: Optional[List[int]] = None
         dialate_mask_pixel: Optional[int] = 0
+        boxed_mask: Optional[bool] = False
 
     @app.post("/sam/sam-predict")
     def api_sam_predict(payload: SamPredictRequest = Body(...)) -> Any:
@@ -154,6 +155,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
                 payload.dino_preview_checkbox,
                 payload.dino_preview_boxes_selection,
                 payload.dialate_mask_pixel,
+                payload.boxed_mask,
                 )
             result = {
                 "msg": sam_message,
@@ -164,6 +166,8 @@ def sam_api(_: gr.Blocks, app: FastAPI):
             if round_num > 0:
                 result["masks"] = list(map(encode_to_base64, sam_output_mask_gallery[round_num:2*round_num]))
                 result["masked_images"] = list(map(encode_to_base64, sam_output_mask_gallery[2*round_num:]))
+                if payload.boxed_mask:
+                    result["boxed_masks"] = list(map(encode_to_base64, sam_output_mask_gallery[-1:]))
             progress.save_task_result(task_id, result)
             progress.finish_task(task_id)
         return result

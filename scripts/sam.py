@@ -288,7 +288,7 @@ def sam_predict(sam_model_name, input_image, positive_points, negative_points,
 
 def fashion_segment(sam_model_name, input_image, positive_points, negative_points,
                 dino_checkbox, dino_model_name, text_prompt, box_threshold,
-                dino_preview_checkbox, dino_preview_boxes_selection, dialate_mask_pixel):
+                dino_preview_checkbox, dino_preview_boxes_selection, dialate_mask_pixel, boxed_mask):
     print("Start SAM Processing")
     if sam_model_name is None:
         return [], None, None, "SAM model not found. Please download SAM model from extension README."
@@ -363,8 +363,16 @@ def fashion_segment(sam_model_name, input_image, positive_points, negative_point
     annotations = _sam.generate(image_np_rgb)
 
     garbage_collect(sam)
-    return create_mask_output_fashion(image_np, mask_result, boxes_filt, dialate_mask_pixel), infos, annotations, "Success"
+    mask_output = create_mask_output_fashion(image_np, mask_result, boxes_filt, dialate_mask_pixel)
+    if boxed_mask:
+        height, width, _ = image_np_rgb.shape
+        boxed_mask_img = np.zeros((height, width), dtype=np.uint8)
+        for square in boxes_filt:
+            x1, y1, x2, y2 = map(int, square)
+            boxed_mask_img[y1:y2, x1:x2] = 255
 
+        mask_output += [boxed_mask_img]
+    return mask_output , infos, annotations, "Success"
 
 
 def dino_predict(input_image, dino_model_name, text_prompt, box_threshold):
