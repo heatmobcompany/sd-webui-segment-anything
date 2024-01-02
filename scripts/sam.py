@@ -21,13 +21,15 @@ from sam_hq.build_sam_hq import sam_model_registry
 from scripts.dino import dino_model_list, dino_predict_internal, show_boxes, clear_dino_cache, dino_install_issue_text
 from scripts.auto import clear_sem_sam_cache, register_auto_sam, semantic_segmentation, sem_sam_garbage_collect, image_layer_internal, categorical_mask_image, global_sam
 from scripts.process_params import SAMProcessUnit, max_cn_num
+import time
+from scripts.process_smooth_segment import smooth_edge_external, asymptotic
 
 
 refresh_symbol = '\U0001f504'       # 🔄
 sam_model_cache = OrderedDict()
-scripts_sam_model_dir = os.path.join(scripts.basedir(), "models/sam") 
+scripts_sam_model_dir = os.path.join(scripts.basedir(), "models/sam")
 sd_sam_model_dir = os.path.join(models_path, "sam")
-sam_model_dir = sd_sam_model_dir if os.path.exists(sd_sam_model_dir) else scripts_sam_model_dir 
+sam_model_dir = sd_sam_model_dir if os.path.exists(sd_sam_model_dir) else scripts_sam_model_dir
 sam_model_list = [f for f in os.listdir(sam_model_dir) if os.path.isfile(os.path.join(sam_model_dir, f)) and f.split('.')[-1] != 'txt']
 sam_device = device
 
@@ -46,7 +48,7 @@ class ToolButton(gr.Button, gr.components.FormComponent):
 
     def get_block_name(self):
         return "button"
-        
+
 
 def show_masks(image_np, masks: np.ndarray, alpha=0.5):
     image = copy.deepcopy(image_np)
@@ -188,25 +190,34 @@ def create_mask_output_fashion(image_np, masks, boxes_filt, dilate_pixel = 0):
         print(f"index: {index}, dilate_pixel: {dilate_pixel}")
         index += 1
         if dilate_pixel != 0:
-            d,w,h = mask.shape
+            d, w, h = mask.shape
             if d > 1:
                 mask = np.logical_or.reduce(mask)
-            mask = mask.reshape((w,h))
-            mask = mask.astype(np.uint8)*255
-            mask = border_adjust(mask, dilate_pixel)
+            mask = mask.reshape((w, h))
+            mask = mask.astype(np.uint8) * 255
+            # mask = border_adjust(mask, dilate_pixel)
+            start = time.time()
+            mask = asymptotic(image_np, mask)
+            end = time.time()
+            print("Execution time:", end - start)
             mask = (mask > 0).astype(bool)
-            mask = mask.reshape((1,w,h))
+            mask = mask.reshape((1, w, h))
+
         masks_gallery.append(Image.fromarray(np.any(mask, axis=0)))
         blended_image = show_masks(show_boxes(image_np, boxes_filt), mask)
         mask_images.append(Image.fromarray(blended_image))
         image_np_copy = copy.deepcopy(image_np)
         image_np_copy[~np.any(mask, axis=0)] = np.array([0, 0, 0, 0])
-        matted_images.append(Image.fromarray(image_np_copy))
+        # start = time.time()
+        smooth_mask = smooth_edge_external(image_np_copy)
+        # end = time.time()
+        # print("Execution time:", end - start)
+        matted_images.append(Image.fromarray(smooth_mask))
     return mask_images + masks_gallery + matted_images
 
 def create_mask_batch_output(
-    input_image_file, dino_batch_dest_dir, 
-    image_np, masks, boxes_filt, batch_dilation_amt, 
+    input_image_file, dino_batch_dest_dir,
+    image_np, masks, boxes_filt, batch_dilation_amt,
     dino_batch_save_image, dino_batch_save_mask, dino_batch_save_background, dino_batch_save_image_with_mask):
     print("Creating batch output image")
     filename, ext = os.path.splitext(os.path.basename(input_image_file))
@@ -399,7 +410,7 @@ def dino_batch_process(
     print("Start batch processing")
     sam = init_sam_model(batch_sam_model_name)
     predictor = SamPredictorHQ(sam, 'hq' in batch_sam_model_name)
-    
+
     process_info = ""
     install_success = True
     all_files = glob.glob(os.path.join(dino_batch_source_dir, "*"))
@@ -419,7 +430,7 @@ def dino_batch_process(
             print(msg)
             process_info += (msg + "\n")
             continue
-        
+
         predictor.set_image(image_np_rgb)
         transformed_boxes = predictor.transform.apply_boxes_torch(boxes_filt, image_np.shape[:2])
         masks, _, _ = predictor.predict_torch(
@@ -427,33 +438,33 @@ def dino_batch_process(
             point_labels=None,
             boxes=transformed_boxes.to(sam_device),
             multimask_output=(dino_batch_output_per_image == 1))
-        
+
         masks = masks.permute(1, 0, 2, 3).cpu().numpy()
         boxes_filt = boxes_filt.cpu().numpy().astype(int)
-        
+
         create_mask_batch_output(
-            input_image_file, dino_batch_dest_dir, 
-            image_np, masks, boxes_filt, batch_dilation_amt, 
+            input_image_file, dino_batch_dest_dir,
+            image_np, masks, boxes_filt, batch_dilation_amt,
             dino_batch_save_image, dino_batch_save_mask, dino_batch_save_background, dino_batch_save_image_with_mask)
-    
+
     garbage_collect(sam)
     return process_info + "Done" + ("" if install_success else f". However, GroundingDINO installment has failed. Your process automatically fall back to local groundingdino. See your terminal for more detail and {dino_install_issue_text}")
 
 
 def cnet_seg(
-    sam_model_name, cnet_seg_input_image, cnet_seg_processor, cnet_seg_processor_res, 
+    sam_model_name, cnet_seg_input_image, cnet_seg_processor, cnet_seg_processor_res,
     cnet_seg_pixel_perfect, cnet_seg_resize_mode, target_W, target_H,
-    auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
-    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
-    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
+    auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh,
+    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh,
+    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio,
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area):
     print(f"Start semantic segmentation with processor {cnet_seg_processor}")
     auto_sam_output_mode = "coco_rle" if "seg" in cnet_seg_processor else "binary_mask"
     sam = load_sam_model(sam_model_name)
     predictor = SamPredictorHQ(sam, 'hq' in sam_model_name)
-    register_auto_sam(predictor, auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
-    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
-    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
+    register_auto_sam(predictor, auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh,
+    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh,
+    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio,
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area, auto_sam_output_mode)
     outputs = semantic_segmentation(cnet_seg_input_image, cnet_seg_processor, cnet_seg_processor_res,
                                     cnet_seg_pixel_perfect, cnet_seg_resize_mode, target_W, target_H)
@@ -463,17 +474,17 @@ def cnet_seg(
 
 
 def image_layout(
-    sam_model_name, layout_input_image_or_path, layout_output_path, 
-    auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
-    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
-    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
+    sam_model_name, layout_input_image_or_path, layout_output_path,
+    auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh,
+    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh,
+    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio,
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area):
     print("Start processing image layout")
     sam = load_sam_model(sam_model_name)
     predictor = SamPredictorHQ(sam, 'hq' in sam_model_name)
-    register_auto_sam(predictor, auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
-    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
-    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
+    register_auto_sam(predictor, auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh,
+    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh,
+    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio,
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area, "binary_mask")
     outputs = image_layer_internal(layout_input_image_or_path, layout_output_path)
     sem_sam_garbage_collect()
@@ -482,19 +493,19 @@ def image_layout(
 
 
 def categorical_mask(
-    sam_model_name, crop_processor, crop_processor_res, 
+    sam_model_name, crop_processor, crop_processor_res,
     crop_pixel_perfect, crop_resize_mode, target_W, target_H,
-    crop_category_input, crop_input_image, 
-    auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
-    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
-    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
+    crop_category_input, crop_input_image,
+    auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh,
+    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh,
+    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio,
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area):
     print("Start processing categorical mask")
     sam = load_sam_model(sam_model_name)
     predictor = SamPredictorHQ(sam, 'hq' in sam_model_name)
-    register_auto_sam(predictor, auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
-    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
-    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
+    register_auto_sam(predictor, auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh,
+    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh,
+    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio,
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area, "coco_rle")
     outputs, resized_input_image = categorical_mask_image(crop_processor, crop_processor_res, crop_category_input, crop_input_image,
                                                           crop_pixel_perfect, crop_resize_mode, target_W, target_H)
@@ -509,20 +520,20 @@ def categorical_mask(
 
 
 def categorical_mask_batch(
-    sam_model_name, crop_processor, crop_processor_res, 
+    sam_model_name, crop_processor, crop_processor_res,
     crop_pixel_perfect, crop_resize_mode, target_W, targe_H,
-    crop_category_input, crop_batch_dilation_amt, crop_batch_source_dir, crop_batch_dest_dir, 
-    crop_batch_save_image, crop_batch_save_mask, crop_batch_save_image_with_mask, crop_batch_save_background, 
-    auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
-    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
-    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
+    crop_category_input, crop_batch_dilation_amt, crop_batch_source_dir, crop_batch_dest_dir,
+    crop_batch_save_image, crop_batch_save_mask, crop_batch_save_image_with_mask, crop_batch_save_background,
+    auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh,
+    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh,
+    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio,
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area):
     print("Start processing categorical mask in batch")
     sam = load_sam_model(sam_model_name)
     predictor = SamPredictorHQ(sam, 'hq' in sam_model_name)
-    register_auto_sam(predictor, auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
-    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
-    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
+    register_auto_sam(predictor, auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh,
+    auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh,
+    auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio,
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area, "coco_rle")
     all_files = glob.glob(os.path.join(crop_batch_source_dir, "*"))
     process_info = ""
@@ -533,7 +544,7 @@ def categorical_mask_batch(
         except:
             print(f"File {input_image_file} not image, skipped.")
             continue
-        outputs, resized_input_image = categorical_mask_image(crop_processor, crop_processor_res, crop_category_input, crop_input_image, 
+        outputs, resized_input_image = categorical_mask_image(crop_processor, crop_processor_res, crop_category_input, crop_input_image,
                                                               crop_pixel_perfect, crop_resize_mode, target_W, targe_H)
         if isinstance(outputs, str):
             outputs = f"Image {image_index}: {outputs}"
@@ -543,8 +554,8 @@ def categorical_mask_batch(
         resized_input_image_pil = Image.fromarray(resized_input_image).convert("RGBA")
         resized_input_image_np = np.array(resized_input_image_pil)
         create_mask_batch_output(
-            input_image_file, crop_batch_dest_dir, 
-            resized_input_image_np, outputs[None, None, ...], None, crop_batch_dilation_amt, 
+            input_image_file, crop_batch_dest_dir,
+            resized_input_image_np, outputs[None, None, ...], None, crop_batch_dilation_amt,
             crop_batch_save_image, crop_batch_save_mask, crop_batch_save_background, crop_batch_save_image_with_mask)
     sem_sam_garbage_collect()
     garbage_collect(sam)
@@ -576,7 +587,7 @@ def priorize_sam_scripts(is_img2img):
 def ui_sketch_inner():
     sam_inpaint_color_sketch = gr.Image(label="Color sketch inpainting", source="upload", interactive=True, type="pil", tool="color-sketch", image_mode="RGBA")
     sam_inpaint_mask_alpha = gr.Slider(label="Mask transparency")
-    return sam_inpaint_color_sketch, sam_inpaint_mask_alpha    
+    return sam_inpaint_color_sketch, sam_inpaint_mask_alpha
 
 
 def ui_sketch(sam_input_image, is_img2img):
@@ -651,7 +662,7 @@ def ui_processor(use_random=True, use_cnet=True):
         cnet_seg_resize_mode = gr.Radio(choices=["Just Resize", "Crop and Resize", "Resize and Fill"], value="Crop and Resize", label="Resize Mode", type="index", visible=False)
         if use_random and use_cnet:
             cnet_seg_gallery_input = gr.Radio(
-                choices=["1", "2"], value="2", type="index", visible=False, 
+                choices=["1", "2"], value="2", type="index", visible=False,
                 label="Select ControlNet input from random segmentation gallery. Choose 2 for Edit-Anything ControlNet.")
         else:
             cnet_seg_gallery_input = gr.Label(visible=False)
@@ -756,7 +767,7 @@ class Script(scripts.Script):
                     sam_dilation_checkbox, sam_dilation_output_gallery = ui_dilation(sam_output_mask_gallery, sam_output_chosen_mask, sam_input_image)
                     sam_single_image_process = (
                         sam_inpaint_upload_enable, sam_cnet_inpaint_invert, sam_cnet_inpaint_idx,
-                        sam_input_image, sam_output_mask_gallery, sam_output_chosen_mask, 
+                        sam_input_image, sam_output_mask_gallery, sam_output_chosen_mask,
                         sam_dilation_checkbox, sam_dilation_output_gallery)
                     ui_process += sam_single_image_process
 
@@ -770,10 +781,10 @@ class Script(scripts.Script):
                     dino_batch_run_button.click(
                         fn=dino_batch_process,
                         inputs=[sam_model_name, dino_batch_model_name, dino_batch_text_prompt, dino_batch_box_threshold, dino_batch_dilation_amt,
-                                dino_batch_source_dir, dino_batch_dest_dir, dino_batch_output_per_image, 
+                                dino_batch_source_dir, dino_batch_dest_dir, dino_batch_output_per_image,
                                 dino_batch_save_image, dino_batch_save_mask, dino_batch_save_background, dino_batch_save_image_with_mask],
                         outputs=[dino_batch_progress])
-                    
+
                 with gr.TabItem(label="Auto SAM"):
                     gr.Markdown("Auto SAM is mainly for semantic segmentation and image layout generation, which is supported based on ControlNet. You must have ControlNet extension installed, and you should not change its directory name (sd-webui-controlnet).")
                     gr.Markdown("The annotator directory inside the SAM extension directory is only a symbolic link. This is to save your space and make the extension repository clean.")
@@ -793,9 +804,9 @@ class Script(scripts.Script):
                             auto_sam_crop_overlap_ratio = gr.Slider(label="crop_overlap_ratio", value=512/1500, minimum=0, maximum=1, step=0.01)
                             auto_sam_crop_n_points_downscale_factor = gr.Number(label="crop_n_points_downscale_factor", value=1, precision=0)
                         auto_sam_min_mask_region_area = gr.Number(label="min_mask_region_area", value=0, precision=0)
-                        auto_sam_config = (auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
-                                           auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
-                                           auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
+                        auto_sam_config = (auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh,
+                                           auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh,
+                                           auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio,
                                            auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area)
 
                     with gr.Tabs():
@@ -860,15 +871,15 @@ class Script(scripts.Script):
                                     crop_result = gr.Text(value="", label="Categorical mask status")
                                     crop_submit.click(
                                         fn=categorical_mask,
-                                        inputs=[sam_model_name, crop_processor, crop_processor_res, crop_pixel_perfect, crop_resize_mode, 
-                                                img2img_width if is_img2img else txt2img_width, img2img_height if is_img2img else txt2img_height, 
+                                        inputs=[sam_model_name, crop_processor, crop_processor_res, crop_pixel_perfect, crop_resize_mode,
+                                                img2img_width if is_img2img else txt2img_width, img2img_height if is_img2img else txt2img_height,
                                                 crop_category_input, crop_input_image, *auto_sam_config],
                                         outputs=[crop_output_gallery, crop_result, crop_resized_image])
                                     crop_inpaint_enable, crop_cnet_inpaint_invert, crop_cnet_inpaint_idx = ui_inpaint(is_img2img, max_cn_num())
                                     crop_dilation_checkbox, crop_dilation_output_gallery = ui_dilation(crop_output_gallery, crop_padding, crop_resized_image)
                                     crop_single_image_process = (
-                                        crop_inpaint_enable, crop_cnet_inpaint_invert, crop_cnet_inpaint_idx, 
-                                        crop_resized_image, crop_output_gallery, crop_padding, 
+                                        crop_inpaint_enable, crop_cnet_inpaint_invert, crop_cnet_inpaint_idx,
+                                        crop_resized_image, crop_output_gallery, crop_padding,
                                         crop_dilation_checkbox, crop_dilation_output_gallery)
                                     ui_process += crop_single_image_process
 
@@ -876,13 +887,13 @@ class Script(scripts.Script):
                                     crop_batch_dilation_amt, crop_batch_source_dir, crop_batch_dest_dir, _, crop_batch_save_image, crop_batch_save_mask, crop_batch_save_image_with_mask, crop_batch_save_background, crop_batch_run_button, crop_batch_progress = ui_batch(False)
                                     crop_batch_run_button.click(
                                         fn=categorical_mask_batch,
-                                        inputs=[sam_model_name, crop_processor, crop_processor_res, crop_pixel_perfect, crop_resize_mode, 
-                                                img2img_width if is_img2img else txt2img_width, img2img_height if is_img2img else txt2img_height, 
-                                                crop_category_input, crop_batch_dilation_amt, crop_batch_source_dir, crop_batch_dest_dir, 
+                                        inputs=[sam_model_name, crop_processor, crop_processor_res, crop_pixel_perfect, crop_resize_mode,
+                                                img2img_width if is_img2img else txt2img_width, img2img_height if is_img2img else txt2img_height,
+                                                crop_category_input, crop_batch_dilation_amt, crop_batch_source_dir, crop_batch_dest_dir,
                                                 crop_batch_save_image, crop_batch_save_mask, crop_batch_save_image_with_mask, crop_batch_save_background, *auto_sam_config],
                                         outputs=[crop_batch_progress])
-                            
-                            
+
+
                 with gr.TabItem(label="Upload Mask to ControlNet Inpainting"):
                     gr.Markdown("This panel is for those who want to upload mask to ControlNet inpainting. It is not part of the SAM feature. It might be removed someday when ControlNet support uploading image and mask. "
                                 "It serves as a temporarily workaround to overcome the unavailability of image with mask uploading feature in ControlNet extension.")
@@ -918,7 +929,7 @@ class Script(scripts.Script):
                         inputs=None,
                         outputs=[sam_inpaint_upload_enable, cnet_seg_enable_copy, crop_inpaint_enable],
                         show_progress=False)
-        
+
         return ui_process
 
     def process(self, p: StableDiffusionProcessing, *args):
