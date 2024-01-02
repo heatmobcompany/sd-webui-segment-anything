@@ -369,6 +369,9 @@ def fashion_segment(sam_model_name, input_image, positive_points, negative_point
         boxed_mask_img = np.zeros((height, width), dtype=np.uint8)
         for square in boxes_filt:
             x1, y1, x2, y2 = map(int, square)
+            mask_ratio = abs(x1 - x2) * abs(y1 - y2) / (width * height)
+            if mask_ratio > 0.2:
+                continue
             boxed_mask_img[y1:y2, x1:x2] = 255
 
         mask_output += [boxed_mask_img]
