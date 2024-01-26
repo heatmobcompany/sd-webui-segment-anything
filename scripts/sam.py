@@ -178,22 +178,25 @@ def border_adjust(mask, number_pixel):
     return mask
 
 
-def create_mask_output_fashion(image_np, masks, boxes_filt, dilate_pixel = 0):
+def create_mask_output_fashion(image_np, masks, boxes_filt, dilate_pixel = None):
     print("Creating fashion output image")
     mask_images, masks_gallery, matted_images = [], [], []
     boxes_filt = boxes_filt.numpy().astype(int) if boxes_filt is not None else None
     index = 0
     for mask in masks:
-        dilate_pixel = dilate_pixel if dilate_pixel != 0 else -2 if index == 1 else -4
-        print(f"index: {index}, dilate_pixel: {dilate_pixel}")
+        if isinstance(dilate_pixel, list):
+            _dilate_pixel = dilate_pixel[index]
+        else:
+            _dilate_pixel = (dilate_pixel if dilate_pixel != 0 else -2 if index == 1 else -4)
+        print(f"index1: {index}, dilate_pixel: {_dilate_pixel}")
         index += 1
-        if dilate_pixel != 0:
+        if _dilate_pixel != 0:
             d,w,h = mask.shape
             if d > 1:
                 mask = np.logical_or.reduce(mask)
             mask = mask.reshape((w,h))
             mask = mask.astype(np.uint8)*255
-            mask = border_adjust(mask, dilate_pixel)
+            mask = border_adjust(mask, _dilate_pixel)
             mask = (mask > 0).astype(bool)
             mask = mask.reshape((1,w,h))
         masks_gallery.append(Image.fromarray(np.any(mask, axis=0)))

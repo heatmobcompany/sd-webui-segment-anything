@@ -64,7 +64,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
         dino_box_threshold: Optional[float] = 0.3
         dino_preview_checkbox: bool = False
         dino_preview_boxes_selection: Optional[List[int]] = None
-        dialate_mask_pixel: Optional[int] = 0
+        dialate_mask_pixel: Optional[int | List[int]] = 0
         boxed_mask: Optional[bool] = False
 
     @app.post("/sam/sam-predict")
