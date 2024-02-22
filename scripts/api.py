@@ -15,6 +15,12 @@ from scripts.sam import sam_model_list
 from sam_hq import progress
 from sam_hq.progress import segment_queue_lock
 from modules.queue_lock import QueueLock
+try:
+    from helper.logging import Logger
+    logger = Logger("SAM")
+except Exception:
+    import logging
+    logger = logging.getLogger("SAM")
 
 
 def decode_to_pil(image):
@@ -69,7 +75,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
 
     @app.post("/sam/sam-predict")
     def api_sam_predict(payload: SamPredictRequest = Body(...)) -> Any:
-        print(f"SAM API /sam/sam-predict received post request")
+        logger.info(f"SAM API /sam/sam-predict received post request")
         task_id = ''.join(random.choice(string.ascii_letters) for i in range(10))
         task_id = f'task({task_id})'
         response = {"message": "Job created successfully",
@@ -117,7 +123,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
 
     @app.post("/sam/fashion-segment")
     def api_sam_predict(payload: SamPredictRequest = Body(...)) -> Any:
-        print(f"SAM API /sam/fashion-segment received post request")
+        logger.info(f"SAM API /sam/fashion-segment received post request")
         task_id = ''.join(random.choice(string.ascii_letters) for i in range(10))
         task_id = f'task({task_id})'
         response = {"message": "Job created successfully",
@@ -181,7 +187,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
 
     @app.post("/sam/dino-predict")
     async def api_dino_predict(payload: DINOPredictRequest = Body(...)) -> Any:
-        print(f"SAM API /sam/dino-predict received request")
+        logger.info(f"SAM API /sam/dino-predict received request")
         payload.input_image = decode_to_pil(payload.input_image)
         dino_output_img, _, dino_msg = dino_predict(
             payload.input_image,
@@ -192,7 +198,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
             dino_msg = dino_msg["value"]
         else:
             dino_msg = "Done"
-        print(f"SAM API /sam/dino-predict finished with message: {dino_msg}")
+        logger.info(f"SAM API /sam/dino-predict finished with message: {dino_msg}")
         return {
             "msg": dino_msg,
             "image_with_box": encode_to_base64(dino_output_img) if dino_output_img is not None else None,
@@ -205,11 +211,11 @@ def sam_api(_: gr.Blocks, app: FastAPI):
 
     @app.post("/sam/dilate-mask")
     async def api_dilate_mask(payload: DilateMaskRequest = Body(...)) -> Any:
-        print(f"SAM API /sam/dilate-mask received request")
+        logger.info(f"SAM API /sam/dilate-mask received request")
         payload.input_image = decode_to_pil(payload.input_image).convert("RGBA")
         payload.mask = decode_to_pil(payload.mask)
         dilate_result = list(map(encode_to_base64, update_mask(payload.mask, 0, payload.dilate_amount, payload.input_image)))
-        print(f"SAM API /sam/dilate-mask finished")
+        logger.info(f"SAM API /sam/dilate-mask finished")
         return {"blended_image": dilate_result[0], "mask": dilate_result[1], "masked_image": dilate_result[2]}
 
     
@@ -239,7 +245,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
     @app.post("/sam/controlnet-seg")
     async def api_controlnet_seg(payload: ControlNetSegRequest = Body(...),
                                  autosam_conf: AutoSAMConfig = Body(...)) -> Any:
-        print(f"SAM API /sam/controlnet-seg received request")
+        logger.info(f"SAM API /sam/controlnet-seg received request")
         payload.input_image = decode_to_pil(payload.input_image)
         cnet_seg_img, cnet_seg_msg = cnet_seg(
             payload.sam_model_name,
@@ -262,7 +268,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
             autosam_conf.crop_n_points_downscale_factor,
             autosam_conf.min_mask_region_area)
         cnet_seg_img = list(map(encode_to_base64, cnet_seg_img))
-        print(f"SAM API /sam/controlnet-seg finished with message {cnet_seg_msg}")
+        logger.info(f"SAM API /sam/controlnet-seg finished with message {cnet_seg_msg}")
         result = {
             "msg": cnet_seg_msg,
         }
@@ -291,7 +297,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
     @app.post("/sam/category-mask")
     async def api_category_mask(payload: CategoryMaskRequest = Body(...),
                                 autosam_conf: AutoSAMConfig = Body(...)) -> Any:
-        print(f"SAM API /sam/category-mask received request")
+        logger.info(f"SAM API /sam/category-mask received request")
         payload.input_image = decode_to_pil(payload.input_image)
         category_mask_img, category_mask_msg, resized_input_img = categorical_mask(
             payload.sam_model_name,
@@ -315,7 +321,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
             autosam_conf.crop_n_points_downscale_factor,
             autosam_conf.min_mask_region_area)
         category_mask_img = list(map(encode_to_base64, category_mask_img))
-        print(f"SAM API /sam/category-mask finished with message {category_mask_msg}")
+        logger.info(f"SAM API /sam/category-mask finished with message {category_mask_msg}")
         result = {
             "msg": category_mask_msg,
         }
@@ -332,4 +338,4 @@ try:
     import modules.script_callbacks as script_callbacks
     script_callbacks.on_app_started(sam_api)
 except:
-    print("SAM Web UI API failed to initialize")
+    logger.error("SAM Web UI API failed to initialize")

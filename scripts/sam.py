@@ -21,7 +21,12 @@ from sam_hq.build_sam_hq import sam_model_registry
 from scripts.dino import dino_model_list, dino_predict_internal, show_boxes, clear_dino_cache, dino_install_issue_text
 from scripts.auto import clear_sem_sam_cache, register_auto_sam, semantic_segmentation, sem_sam_garbage_collect, image_layer_internal, categorical_mask_image, global_sam
 from scripts.process_params import SAMProcessUnit, max_cn_num
-
+try:
+    from helper.logging import Logger
+    logger = Logger("SAM")
+except Exception:
+    import logging
+    logger = logging.getLogger("SAM")
 
 refresh_symbol = '\U0001f504'       # 🔄
 sam_model_cache = OrderedDict()
@@ -58,7 +63,7 @@ def show_masks(image_np, masks: np.ndarray, alpha=0.5):
 
 
 def update_mask(mask_gallery, chosen_mask, dilation_amt, input_image):
-    print("Dilation Amount: ", dilation_amt)
+    logger.info("Dilation Amount: ", dilation_amt)
     if isinstance(mask_gallery, list):
         mask_image = Image.open(mask_gallery[chosen_mask + 3]['name'])
     else:
@@ -119,7 +124,7 @@ def refresh_sam_models(*inputs):
 
 
 def init_sam_model(sam_model_name):
-    print(f"Initializing SAM to {sam_device}")
+    logger.info(f"Initializing SAM to {sam_device}")
     if sam_model_name in sam_model_cache:
         sam = sam_model_cache[sam_model_name]
         if shared.cmd_opts.lowvram or (str(sam_device) not in str(sam.device)):
@@ -144,7 +149,7 @@ def dilate_mask(mask, dilation_amt):
 
 
 def create_mask_output(image_np, masks, boxes_filt, dilate_pixel = 0):
-    print("Creating output image")
+    logger.info("Creating output image")
     mask_images, masks_gallery, matted_images = [], [], []
     boxes_filt = boxes_filt.numpy().astype(int) if boxes_filt is not None else None
     for mask in masks:
@@ -179,7 +184,7 @@ def border_adjust(mask, number_pixel):
 
 
 def create_mask_output_fashion(image_np, masks, boxes_filt, dilate_pixel = None):
-    print("Creating fashion output image")
+    logger.info("Creating fashion output image")
     mask_images, masks_gallery, matted_images = [], [], []
     boxes_filt = boxes_filt.numpy().astype(int) if boxes_filt is not None else None
     index = 0
@@ -188,7 +193,7 @@ def create_mask_output_fashion(image_np, masks, boxes_filt, dilate_pixel = None)
             _dilate_pixel = dilate_pixel[index]
         else:
             _dilate_pixel = (dilate_pixel if dilate_pixel != 0 else -2 if index == 1 else -4)
-        print(f"index1: {index}, dilate_pixel: {_dilate_pixel}")
+        logger.info(f"index1: {index}, dilate_pixel: {_dilate_pixel}")
         index += 1
         if _dilate_pixel != 0:
             d,w,h = mask.shape
@@ -211,7 +216,7 @@ def create_mask_batch_output(
     input_image_file, dino_batch_dest_dir, 
     image_np, masks, boxes_filt, batch_dilation_amt, 
     dino_batch_save_image, dino_batch_save_mask, dino_batch_save_background, dino_batch_save_image_with_mask):
-    print("Creating batch output image")
+    logger.info("Creating batch output image")
     filename, ext = os.path.splitext(os.path.basename(input_image_file))
     ext = ".png" # JPEG not compatible with RGBA
     for idx, mask in enumerate(masks):
@@ -237,7 +242,7 @@ def create_mask_batch_output(
 def sam_predict(sam_model_name, input_image, positive_points, negative_points,
                 dino_checkbox, dino_model_name, text_prompt, box_threshold,
                 dino_preview_checkbox, dino_preview_boxes_selection, dialate_mask_pixel):
-    print("Start SAM Processing")
+    logger.info("Start SAM Processing")
     if sam_model_name is None:
         return [], "SAM model not found. Please download SAM model from extension README."
     if input_image is None:
@@ -253,12 +258,12 @@ def sam_predict(sam_model_name, input_image, positive_points, negative_points,
             valid_indices = [int(i) for i in dino_preview_boxes_selection if int(i) < boxes_filt.shape[0]]
             boxes_filt = boxes_filt[valid_indices]
     sam = init_sam_model(sam_model_name)
-    print(f"Running SAM Inference {image_np_rgb.shape}")
+    logger.info(f"Running SAM Inference {image_np_rgb.shape}")
     predictor = SamPredictorHQ(sam, 'hq' in sam_model_name)
     predictor.set_image(image_np_rgb)
     if dino_enabled and boxes_filt.shape[0] > 1:
         sam_predict_status = f"SAM inference with {boxes_filt.shape[0]} boxes, point prompts discarded"
-        print(sam_predict_status)
+        logger.info(sam_predict_status)
         transformed_boxes = predictor.transform.apply_boxes_torch(boxes_filt, image_np.shape[:2])
         masks, _, _ = predictor.predict_torch(
             point_coords=None,
@@ -275,7 +280,7 @@ def sam_predict(sam_model_name, input_image, positive_points, negative_points,
                 return [], "It seems that you are using a high box threshold with no point prompts. Please lower your box threshold and re-try."
             return [], "You neither added point prompts nor enabled GroundingDINO. Segmentation cannot be generated."
         sam_predict_status = f"SAM inference with {num_box} box, {len(positive_points)} positive prompts, {len(negative_points)} negative prompts"
-        print(sam_predict_status)
+        logger.info(sam_predict_status)
         point_coords = np.array(positive_points + negative_points)
         point_labels = np.array([1] * len(positive_points) + [0] * len(negative_points))
         box = copy.deepcopy(boxes_filt[0].numpy()) if boxes_filt is not None and boxes_filt.shape[0] > 0 else None
@@ -292,7 +297,7 @@ def sam_predict(sam_model_name, input_image, positive_points, negative_points,
 def fashion_segment(sam_model_name, input_image, positive_points, negative_points,
                 dino_checkbox, dino_model_name, text_prompt, box_threshold,
                 dino_preview_checkbox, dino_preview_boxes_selection, dialate_mask_pixel, boxed_mask):
-    print("Start SAM Processing")
+    logger.info("Start SAM Processing")
     if sam_model_name is None:
         return [], None, None, "SAM model not found. Please download SAM model from extension README."
     if input_image is None:
@@ -317,7 +322,7 @@ def fashion_segment(sam_model_name, input_image, positive_points, negative_point
             if dino_preview_checkbox is not None and dino_preview_checkbox and dino_preview_boxes_selection is not None:
                 valid_indices = [int(i) for i in dino_preview_boxes_selection if int(i) < boxes_filt.shape[0]]
                 boxes_filt = boxes_filt[valid_indices]
-        print(f"Running SAM Inference {image_np_rgb.shape}")
+        logger.info(f"Running SAM Inference {image_np_rgb.shape}")
 
         if dino_enabled and boxes_filt.shape[0] > 1:
             info["message"] = f"SAM inference with {boxes_filt.shape[0]} boxes, point prompts discarded"
@@ -399,23 +404,23 @@ def dino_batch_process(
     dino_batch_output_per_image, dino_batch_save_image, dino_batch_save_mask, dino_batch_save_background, dino_batch_save_image_with_mask):
     if batch_text_prompt is None or batch_text_prompt == "":
         return "Please add text prompts to generate masks"
-    print("Start batch processing")
+    logger.info("Start batch processing")
     sam = init_sam_model(batch_sam_model_name)
     predictor = SamPredictorHQ(sam, 'hq' in batch_sam_model_name)
 
     if not os.path.exists(dino_batch_dest_dir):
         os.makedirs(dino_batch_dest_dir)
-        print(f"Destination directory created: {dino_batch_dest_dir}")
+        logger.info(f"Destination directory created: {dino_batch_dest_dir}")
     
     process_info = ""
     install_success = True
     all_files = glob.glob(os.path.join(dino_batch_source_dir, "*"))
     for image_index, input_image_file in enumerate(all_files):
-        print(f"Processing {image_index}/{len(all_files)} {input_image_file}")
+        logger.info(f"Processing {image_index}/{len(all_files)} {input_image_file}")
         try:
             input_image = Image.open(input_image_file).convert("RGBA")
         except:
-            print(f"File {input_image_file} not image, skipped.")
+            logger.error(f"File {input_image_file} not image, skipped.")
             continue
         image_np = np.array(input_image)
         image_np_rgb = image_np[..., :3]
@@ -423,7 +428,7 @@ def dino_batch_process(
         boxes_filt, install_success = dino_predict_internal(input_image, batch_dino_model_name, batch_text_prompt, batch_box_threshold)
         if boxes_filt is None or boxes_filt.shape[0] == 0:
             msg = f"GroundingDINO generated 0 box for image {input_image_file}, please lower the box threshold if you want any segmentation for this image. "
-            print(msg)
+            logger.info(msg)
             process_info += (msg + "\n")
             continue
         
@@ -454,7 +459,7 @@ def cnet_seg(
     auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
     auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area):
-    print(f"Start semantic segmentation with processor {cnet_seg_processor}")
+    logger.info(f"Start semantic segmentation with processor {cnet_seg_processor}")
     auto_sam_output_mode = "coco_rle" if "seg" in cnet_seg_processor else "binary_mask"
     sam = load_sam_model(sam_model_name)
     predictor = SamPredictorHQ(sam, 'hq' in sam_model_name)
@@ -475,7 +480,7 @@ def image_layout(
     auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
     auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area):
-    print("Start processing image layout")
+    logger.info("Start processing image layout")
     sam = load_sam_model(sam_model_name)
     predictor = SamPredictorHQ(sam, 'hq' in sam_model_name)
     register_auto_sam(predictor, auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
@@ -496,7 +501,7 @@ def categorical_mask(
     auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
     auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area):
-    print("Start processing categorical mask")
+    logger.info("Start processing categorical mask")
     sam = load_sam_model(sam_model_name)
     predictor = SamPredictorHQ(sam, 'hq' in sam_model_name)
     register_auto_sam(predictor, auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
@@ -524,7 +529,7 @@ def categorical_mask_batch(
     auto_sam_stability_score_thresh, auto_sam_stability_score_offset, auto_sam_box_nms_thresh, 
     auto_sam_crop_n_layers, auto_sam_crop_nms_thresh, auto_sam_crop_overlap_ratio, 
     auto_sam_crop_n_points_downscale_factor, auto_sam_min_mask_region_area):
-    print("Start processing categorical mask in batch")
+    logger.info("Start processing categorical mask in batch")
     sam = load_sam_model(sam_model_name)
     predictor = SamPredictorHQ(sam, 'hq' in sam_model_name)
     register_auto_sam(predictor, auto_sam_points_per_side, auto_sam_points_per_batch, auto_sam_pred_iou_thresh, 
@@ -534,17 +539,17 @@ def categorical_mask_batch(
     all_files = glob.glob(os.path.join(crop_batch_source_dir, "*"))
     process_info = ""
     for image_index, input_image_file in enumerate(all_files):
-        print(f"Processing {image_index}/{len(all_files)} {input_image_file}")
+        logger.info(f"Processing {image_index}/{len(all_files)} {input_image_file}")
         try:
             crop_input_image = Image.open(input_image_file).convert("RGB")
         except:
-            print(f"File {input_image_file} not image, skipped.")
+            logger.error(f"File {input_image_file} not image, skipped.")
             continue
         outputs, resized_input_image = categorical_mask_image(crop_processor, crop_processor_res, crop_category_input, crop_input_image, 
                                                               crop_pixel_perfect, crop_resize_mode, target_W, targe_H)
         if isinstance(outputs, str):
             outputs = f"Image {image_index}: {outputs}"
-            print(outputs)
+            logger.info(outputs)
             process_info += outputs + "\n"
             continue
         resized_input_image_pil = Image.fromarray(resized_input_image).convert("RGBA")
