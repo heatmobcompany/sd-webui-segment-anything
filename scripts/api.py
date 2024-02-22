@@ -15,6 +15,8 @@ from scripts.sam import sam_model_list
 from sam_hq import progress
 from sam_hq.progress import segment_queue_lock
 from modules.queue_lock import QueueLock
+
+import time
 try:
     from helper.logging import Logger
     logger = Logger("SAM")
@@ -123,17 +125,21 @@ def sam_api(_: gr.Blocks, app: FastAPI):
 
     @app.post("/sam/fashion-segment")
     def api_sam_predict(payload: SamPredictRequest = Body(...)) -> Any:
-        logger.info(f"SAM API /sam/fashion-segment received post request")
+        logger.info(f"===== SAM API /sam/fashion-segment post start =====")
+        start_time = time.time()
         task_id = ''.join(random.choice(string.ascii_letters) for i in range(10))
         task_id = f'task({task_id})'
         response = {"message": "Job created successfully",
                     'task_id': task_id}
         thread = threading.Thread(target=do_fashion_segment, args=(payload, task_id))
         thread.start()
+        logger.info("===== SAM API /sam/fashion-segment post end in {:.3f} seconds =====".format(time.time() - start_time))
         return response
 
     @app.get("/sam/fashion-segment")
     def get_fashion_segment(task_id: str) -> Any:
+        logger.info(f"===== SAM API /sam/fashion-segment get start =====")
+        start_time = time.time()
         ret = progress.get_task_info(task_id)
         response = {
             "status": "completed" if  ret["completed"] else "processing" if ret["active"] else "waiting",
@@ -142,11 +148,15 @@ def sam_api(_: gr.Blocks, app: FastAPI):
 
         if ret['queued']:
             response["textinfo"] = f"In queue... {ret['queue_pos'] + 1}/{ret['queue_len']} request(s) remaining until yours" if ret['queue_pos'] >= 0 else "Waiting..."
+        logger.info("===== SAM API /sam/fashion-segment get end in {:.3f} seconds =====".format(time.time() - start_time))
         return response
 
     def do_fashion_segment(payload: SamPredictRequest, task_id: str):
+        logger.info(f"do_fashion_segment wait")
+        start_time = time.time()
         progress.add_task_to_queue(task_id)
         with QueueLock(segment_queue_lock, name=task_id):
+            logger.info("do_fashion_segment run in {:.3f} seconds".format(time.time() - start_time))
             progress.start_task(task_id)
             payload.input_image = decode_to_pil(payload.input_image).convert('RGBA')
             sam_output_mask_gallery, infos, annotations, sam_message = fashion_segment(
@@ -176,6 +186,7 @@ def sam_api(_: gr.Blocks, app: FastAPI):
                     result["boxed_masks"] = list(map(encode_to_base64, sam_output_mask_gallery[-1:]))
             progress.save_task_result(task_id, result)
             progress.finish_task(task_id)
+        logger.info("do_fashion_segment finished in {:.3f} seconds".format(time.time() - start_time))
         return result
 
 
