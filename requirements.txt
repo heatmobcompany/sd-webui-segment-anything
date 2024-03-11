@@ -1,3 +1,5 @@
 segment_anything
 supervision
-git+https://github.com/IDEA-Research/GroundingDINO
+addict
+yapf
+pycocotools
